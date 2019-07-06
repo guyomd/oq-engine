@@ -333,6 +333,8 @@ class HazardCalculator(BaseCalculator):
     """
     Base class for hazard calculators based on source models
     """
+    ssi_called = False
+
     # called multiple times in event_based/py
     def block_splitter(self, sources, weight=get_weight, key=lambda src: 1):
         """
@@ -759,16 +761,37 @@ class HazardCalculator(BaseCalculator):
         """
         Save (weight, num_sites, calc_time) inside the source_info dataset
         """
+        if self.ssi_called:
+            raise RuntimeError('store_source_info must be called only once')
+        self.ssi_called = True
         if calc_times:
             source_info = self.datastore['source_info']
             arr = numpy.zeros((len(source_info), 2), F32)
             ids, vals = zip(*sorted(calc_times.items()))
             arr[numpy.array(ids)] = vals
-            source_info['weight'] += arr[:, 0]
-            source_info['calc_time'] += arr[:, 1]
+            source_info['weight'] = arr[:, 0]
+            source_info['calc_time'] = arr[:, 1]
+            self.datastore['sources_by_mfd'] = get_sources_by_mfd(
+                source_info['source_id', 'grp_id', 'mfdi', 'calc_time'])
 
     def post_process(self):
         """For compatibility with the engine"""
+
+
+def get_sources_by_mfd(source_info):
+    """
+    :returns:
+        an array of shape (num_mfds, num_groups) with the number of sources
+    """
+    num_groups = source_info['grp_id'].max() + 1
+    info = general.group_array(source_info, 'mfdi')
+    arr = numpy.zeros((len(info), num_groups), int)
+    for mfdi, sources in info.items():
+        dic = general.group_array(sources, 'source_id')
+        for source_id, grp in dic.items():
+            if grp['calc_time'].sum() > 0:  # not filtered out
+                arr[mfdi, grp['grp_id']] += 1
+    return arr
 
 
 def build_hmaps(hcurves_by_kind, slice_, imtls, poes, monitor):
