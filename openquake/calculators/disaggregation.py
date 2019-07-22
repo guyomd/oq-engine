@@ -115,7 +115,11 @@ def compute_disagg(dstore, slc, cmaker, iml2s, trti, bin_edges, monitor):
     """
     dstore.open('r')
     oqparam = dstore['oqparam']
+    ok_sites = dstore.get_attr('sitecol', 'ok_sites')
     sitecol = dstore['sitecol']
+    if len(ok_sites):
+        sitecol = sitecol.filtered(ok_sites)
+        iml2s = [iml2s[s] for s in ok_sites]
     rupdata = {k: dstore['rup/' + k][slc] for k in dstore['rup']}
     dstore.close()
     result = {'trti': trti}
@@ -221,11 +225,11 @@ class DisaggregationCalculator(base.HazardCalculator):
                                oq.imtls, oq.poes_disagg)
             if not bad:
                 ok_sites.append(sid)
-        self.sitecol = self.sitecol.filtered(ok_sites)
-        if len(self.sitecol) == 0:
+        if not ok_sites:
             raise SystemExit('Cannot do any disaggregation')
         elif len(ok_sites) < self.N:
             logging.warning('Doing the disaggregation on' % self.sitecol)
+        return ok_sites
 
     def full_disaggregation(self):
         """
@@ -257,10 +261,12 @@ class DisaggregationCalculator(base.HazardCalculator):
         if oq.iml_disagg:
             self.poe_id = {None: 0}
             curves = [None] * len(self.sitecol)  # no hazard curves are needed
+            ok_sites = []
         else:
             self.poe_id = {poe: i for i, poe in enumerate(oq.poes_disagg)}
             curves = [self.get_curve(sid, rlzs) for sid in self.sitecol.sids]
-            self.check_poes_disagg(curves, rlzs)
+            ok_sites = self.check_poes_disagg(curves, rlzs)
+        self.datastore.set_attrs('sitecol', ok_sites=ok_sites)
         iml2s = _iml2s(rlzs, oq.iml_disagg, oq.imtls, poes_disagg, curves)
         if oq.disagg_by_src:
             if R == 1:
@@ -421,9 +427,9 @@ class DisaggregationCalculator(base.HazardCalculator):
             poe_agg = numpy.mean(attrs['poe_agg'])
             if abs(1 - poe_agg / poe) > .1:
                 logging.warning(
-                    'poe_agg=%s is quite different from the expected'
+                    'site #%d: poe_agg=%s is quite different from the expected'
                     ' poe=%s; perhaps the number of intensity measure'
-                    ' levels is too small?', poe_agg, poe)
+                    ' levels is too small?', site_id, poe_agg, poe)
 
     def build_disagg_by_src(self, iml2s):
         """

@@ -220,12 +220,16 @@ def build_matrices(rupdata, sitecol, cmaker, iml2s, trunclevel,
     """
     :yield: (sid, {poe, imt, rlz: matrix})
     """
-    if len(sitecol) >= 32768:
+    N = len(sitecol)
+    N2 = len(iml2s)
+    if N >= 32768:
         raise ValueError('You can disaggregate at max 32,768 sites')
-    indices = _site_indices(rupdata['sid_'], len(sitecol))
+    elif N != N2:
+        raise ValueError('sitecol has %d sites and iml2s %d!' % (N, N2))
+    indices = _site_indices(rupdata['sid_'], len(sitecol.complete))
     eps3 = _eps3(trunclevel, num_epsilon_bins)  # this is slow
     for sid, iml2 in zip(sitecol.sids, iml2s):
-        singlesitecol = sitecol.filtered([sid])
+        singlesitecol = sitecol.complete.filtered([sid])
         bins = get_bins(bin_edges, sid)
         with pne_mon:
             bdata = _disaggregate(cmaker, singlesitecol, rupdata,
