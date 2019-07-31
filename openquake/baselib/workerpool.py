@@ -61,7 +61,7 @@ class WorkerMaster(object):
         self.remote_python = remote_python or sys.executable
         self.task_server_url = 'tcp://%s:%d' % (
             master_host, self.ctrl_port + 1)
-        self.pids = []
+        self.popen = []
 
     def wait_pools(self, seconds):
         """
@@ -109,7 +109,7 @@ class WorkerMaster(object):
                      ctrl_url, self.task_server_url, cores]
             starting.append(' '.join(args))
             po = subprocess.Popen(args)
-            self.pids.append(po.pid)
+            self.popen.append(po)
         return 'starting %s' % starting
 
     def stop(self):
@@ -125,6 +125,8 @@ class WorkerMaster(object):
             with z.Socket(ctrl_url, z.zmq.REQ, 'connect') as sock:
                 sock.send('stop')
                 stopped.append(host)
+        for po in self.popen:
+            po.terminate()
         return 'stopped %s' % stopped
 
     def kill(self):
@@ -140,6 +142,8 @@ class WorkerMaster(object):
             with z.Socket(ctrl_url, z.zmq.REQ, 'connect') as sock:
                 sock.send('kill')
                 killed.append(host)
+        for po in self.popen:
+            po.kill()
         return 'killed %s' % killed
 
     def restart(self):
