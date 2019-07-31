@@ -52,6 +52,8 @@ class WorkerMaster(object):
     :param host_cores: names of the remote hosts and number of cores to use
     :param remote_python: path of the Python executable on the remote hosts
     """
+    popen = []  # must be global to work with the dbserver
+
     def __init__(self, master_host, ctrl_port, host_cores,
                  remote_python=None, receiver_ports=None):
         # NB: receiver_ports is not used but needed for compliance
@@ -61,7 +63,6 @@ class WorkerMaster(object):
         self.remote_python = remote_python or sys.executable
         self.task_server_url = 'tcp://%s:%d' % (
             master_host, self.ctrl_port + 1)
-        self.popen = []
 
     def wait_pools(self, seconds):
         """
@@ -127,6 +128,7 @@ class WorkerMaster(object):
                 stopped.append(host)
         for po in self.popen:
             po.terminate()
+        self.popen.clear()
         return 'stopped %s' % stopped
 
     def kill(self):
@@ -144,6 +146,7 @@ class WorkerMaster(object):
                 killed.append(host)
         for po in self.popen:
             po.kill()
+        self.popen.clear()
         return 'killed %s' % killed
 
     def restart(self):
