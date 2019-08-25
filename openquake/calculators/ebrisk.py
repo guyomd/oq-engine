@@ -56,53 +56,50 @@ def _calc(gmfgetter, assets_by_site, param,
     crmodel = param['crmodel']
     epspath = param['epspath']
     tagnames = param['aggregate_by']
-    e1 = gmfgetter.rupgetter.first_event
-    events = gmfgetter.rupgetter.get_eid_rlz()
-    # numpy.testing.assert_equal(events['eid'], sorted(events['eid']))
-    eid2idx = dict(zip(events['eid'],
-                       range(e1, e1 + gmfgetter.rupgetter.num_events)))
-    eid2rlz = dict(events)
-    with mon_haz:
-        hazard = gmfgetter.get_hazard_by_sid()  # sid -> (sid, eid, gmv)
-
-    for sid, haz in hazard.items():
-        gmf_nbytes += haz.nbytes
-        t0 = time.time()
-        assets_on_sid = assets_by_site[sid]
-        if len(assets_on_sid) == 0:
-            continue
-        num_events_per_sid += len(haz)
-        if param['avg_losses']:
-            ws = gmfgetter.weights[[eid2rlz[eid] for eid in haz['eid']]]
-        assets_by_taxo = get_assets_by_taxo(assets_on_sid, epspath)
-        eidx = numpy.array([eid2idx[eid] for eid in haz['eid']]) - e1
-        haz['eid'] = eidx + e1
-        with mon_risk:
-            out = get_output(crmodel, assets_by_taxo, haz)
-        with mon_agg:
-            for a, asset in enumerate(assets_on_sid):
-                aid = asset['ordinal']
-                tagi = asset[tagnames] if tagnames else ()
-                tagidxs = tuple(idx - 1 for idx in tagi)
-                losses_by_lt = {}
-                for lti, lt in enumerate(crmodel.loss_types):
-                    lratios = out[lt][a]
-                    if lt == 'occupants':
-                        losses = lratios * asset['occupants_None']
-                    else:
-                        losses = lratios * asset['value-' + lt]
-                    if param['asset_loss_table']:
-                        alt[aid, eidx, lti] = losses
-                    losses_by_lt[lt] = losses
-                for loss_idx, losses in lba.compute(asset, losses_by_lt):
-                    acc[(eidx, loss_idx) + tagidxs] += losses
-                    if param['avg_losses']:
-                        lba.losses_by_A[aid, loss_idx] += (
-                            losses @ ws * param['ses_ratio'])
-        times[sid] = time.time() - t0
-    if hazard:
-        num_events_per_sid /= len(hazard)
-    return events, num_events_per_sid, gmf_nbytes
+    allrlzs = []
+    for comp in gmfgetter.computers:
+        with mon_haz:
+            hazard = comp.get_hazard()
+            rlzs = comp.rupture.get_events()['rlz']
+            allrlzs.extend(rlzs)
+        e1 = comp.rupture.eslice.start
+        e2 = comp.rupture.eslice.stop
+        eidx = numpy.arange(e2 - e1)
+        for sid, gmvs in hazard.items():
+            haz = dict(eid=eidx, gmv=gmvs)
+            gmf_nbytes += haz.nbytes
+            t0 = time.time()
+            assets_on_sid = assets_by_site[sid]
+            if len(assets_on_sid) == 0:
+                continue
+            num_events_per_sid += len(haz)
+            if param['avg_losses']:
+                ws = gmfgetter.weights[rlzs]
+            assets_by_taxo = get_assets_by_taxo(assets_on_sid, epspath)
+            with mon_risk:
+                out = get_output(crmodel, assets_by_taxo, haz)
+            with mon_agg:
+                for a, asset in enumerate(assets_on_sid):
+                    aid = asset['ordinal']
+                    tagi = asset[tagnames] if tagnames else ()
+                    tagidxs = tuple(idx - 1 for idx in tagi)
+                    losses_by_lt = {}
+                    for lti, lt in enumerate(crmodel.loss_types):
+                        lratios = out[lt][a]
+                        if lt == 'occupants':
+                            losses = lratios * asset['occupants_None']
+                        else:
+                            losses = lratios * asset['value-' + lt]
+                        if param['asset_loss_table']:
+                            alt[aid, eidx, lti] = losses
+                        losses_by_lt[lt] = losses
+                    for loss_idx, losses in lba.compute(asset, losses_by_lt):
+                        acc[(eidx, loss_idx) + tagidxs] += losses
+                        if param['avg_losses']:
+                            lba.losses_by_A[aid, loss_idx] += (
+                                losses @ ws * param['ses_ratio'])
+            times[sid] = time.time() - t0
+    return allrlzs, e1 + eidx, num_events_per_sid, gmf_nbytes
 
 
 def ebrisk(rupgetter, srcfilter, param, monitor):
@@ -128,13 +125,13 @@ def ebrisk(rupgetter, srcfilter, param, monitor):
         gmfgetter = getters.GmfGetter(rupgetter, srcfilter, param['oqparam'])
         gmfgetter.task_no = monitor.task_no
         gmfgetter.init()  # instantiate the computers
-    events, num_events_per_sid, gmf_nbytes = _calc(
+    eidx, rlzs, num_events_per_sid, gmf_nbytes = _calc(
         gmfgetter, assets_by_site, param, alt, acc, times,
         mon_haz, mon_risk, mon_agg)
     with mon_elt:
         elt = numpy.fromiter(
-            ((event['eid'], event['rlz'], losses)  # losses (L, T...)
-             for event, losses in zip(events, acc) if losses.sum()), elt_dt)
+            ((eid, rlzs, losses)  # losses (L, T...)
+             for eid, losses in zip(eidx, acc) if losses.sum()), elt_dt)
         agg = general.AccumDict(accum=numpy.zeros(shape[1:], F32))  # rlz->agg
         for rec in elt:
             agg[rec['rlzi']] += rec['loss'] * param['ses_ratio']
@@ -142,7 +139,7 @@ def ebrisk(rupgetter, srcfilter, param, monitor):
            'events_per_sid': num_events_per_sid, 'gmf_nbytes': gmf_nbytes}
     res['losses_by_A'] = param['lba'].losses_by_A
     if param['asset_loss_table']:
-        res['alt_eidx'] = alt, rupgetter.first_event + numpy.arange(E)
+        res['alt_eidx'] = alt, eidx
     return res
 
 
@@ -199,6 +196,7 @@ class EbriskCalculator(event_based.EventBasedCalculator):
             with hdf5.File(hdf5path, 'r+') as cache:
                 self.datastore.hdf5.copy('weights', cache)
                 self.datastore.hdf5.copy('ruptures', cache)
+                self.datastore.hdf5.copy('eslice', cache)
                 self.datastore.hdf5.copy('rupgeoms', cache)
         ruptures_per_block = numpy.ceil(nruptures / (oq.concurrent_tasks or 1))
         logging.info('Using %d ruptures per block (over %d)',
@@ -214,7 +212,6 @@ class EbriskCalculator(event_based.EventBasedCalculator):
         trt_by_grp = self.csm_info.grp_by("trt")
         samples = self.csm_info.get_samples_by_grp()
         rlzs_by_gsim_grp = self.csm_info.get_rlzs_by_gsim_grp()
-        first_event = 0
         ngroups = 0
         for grp_id, rlzs_by_gsim in rlzs_by_gsim_grp.items():
             start, stop = grp_indices[grp_id]
@@ -223,11 +220,10 @@ class EbriskCalculator(event_based.EventBasedCalculator):
             ngroups += 1
             for indices in general.block_splitter(
                     range(start, stop), ruptures_per_block):
+                indices = list(indices)
                 rgetter = getters.RuptureGetter(
-                    hdf5path, list(indices), grp_id,
-                    trt_by_grp[grp_id], samples[grp_id], rlzs_by_gsim,
-                    first_event)
-                first_event += rgetter.num_events
+                    hdf5path, indices, grp_id,
+                    trt_by_grp[grp_id], samples[grp_id], rlzs_by_gsim)
                 smap.submit(rgetter, self.src_filter, self.param)
         logging.info('Found %d/%d source groups with ruptures',
                      ngroups, len(rlzs_by_gsim_grp))

@@ -18,6 +18,7 @@
 
 import os.path
 import logging
+import itertools
 import collections
 import operator
 import numpy
@@ -281,6 +282,9 @@ class EventBasedCalculator(base.HazardCalculator):
         n_unique_events = len(numpy.unique(events['id']))  # sanity check
         assert n_unique_events == len(events), (n_unique_events, len(events))
         self.datastore['events'] = events
+        rup_indices = get_indices(events['id'] // TWO32)
+        arr = numpy.array(list(rup_indices.values()))[:, 0, :]
+        self.datastore['eslice'] = arr  # shape (U, 2)
 
     def check_overflow(self):
         """

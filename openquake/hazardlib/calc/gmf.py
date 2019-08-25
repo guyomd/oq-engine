@@ -20,10 +20,10 @@
 Module :mod:`~openquake.hazardlib.calc.gmf` exports
 :func:`ground_motion_fields`.
 """
-import collections
 import numpy
 import scipy.stats
 
+from openquake.baselib.general import AccumDict
 from openquake.hazardlib.const import StdDev
 from openquake.hazardlib.gsim.base import ContextMaker
 from openquake.hazardlib.gsim.multi import MultiGMPE
@@ -116,13 +116,31 @@ class GmfComputer(object):
 
     def get_hazard(self, min_iml, rlzs_by_gsim):
         """
-        :returns: a dictionary site_id -> [(eid, gmv), ...]
+        :returns: a dictionary site_id -> gmvs of shape (E, M)
         """
-        dt = numpy.dtype([('eid', U64), ('gmv', (F32, (len(min_iml),)))])
-        dd = collections.defaultdict(list)
-        for rec in self.compute_all(min_iml, rlzs_by_gsim, []):
-            dd[rec[0]].append(rec)
-        return {sid: numpy.array(dd[sid], dt) for sid in dd}
+        rup = self.rupture
+        E = rup.eslice.stop - rup.eslice.start
+        sids = self.sids
+        acc = AccumDict(accum=numpy.zeros((E, len(min_iml)), F32))  # sid->gmvs
+        eids_by_rlz = rup.get_eids_by_rlz(rlzs_by_gsim)
+        n = 0
+        for gs, rlzs in rlzs_by_gsim.items():
+            num_events = sum(len(eids_by_rlz[rlzi]) for rlzi in rlzs)
+            array, sig, eps = self.compute(gs, num_events)  # shape M, N, E
+            for rlzi in rlzs:
+                eids = eids_by_rlz[rlzi]
+                e = len(eids)
+                for ei, eid in enumerate(eids):
+                    gmf = array[:, :, n + ei]  # shape (M, N)
+                    for sid, gmv in zip(sids, gmf.T):
+                        if gmv.sum():
+                            acc[sid][n + ei] = gmv
+                n += e
+        for sid, gmvs in acc.items():
+            for m, miniml in enumerate(min_iml):
+                gmv = gmvs[:, m]
+                gmv[gmv < miniml] = 0
+        return acc
 
     def compute_all(self, min_iml, rlzs_by_gsim, sig_eps):
         """

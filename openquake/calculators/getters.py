@@ -477,7 +477,7 @@ class RuptureGetter(object):
         a list of rupture indices of the same group
     """
     def __init__(self, filename, rup_indices, grp_id, trt, samples,
-                 rlzs_by_gsim, first_event=0):
+                 rlzs_by_gsim):
         self.filename = filename
         self.rup_indices = rup_indices
         if not isinstance(rup_indices, list):  # is a rup_array
@@ -487,7 +487,6 @@ class RuptureGetter(object):
         self.trt = trt
         self.samples = samples
         self.rlzs_by_gsim = rlzs_by_gsim
-        self.first_event = first_event
         self.rlz2idx = {}
         nr = 0
         rlzi = []
@@ -523,7 +522,6 @@ class RuptureGetter(object):
         """
         :returns: RuptureGetters with weight <= maxweight
         """
-        fe = self.first_event
         items = zip(self.rup_indices, self.sids_by_rup)
         lst = []
         for block in general.block_splitter(
@@ -537,10 +535,9 @@ class RuptureGetter(object):
                 # some indices may have weight 0 and are discarded
                 rgetter = self.__class__(
                     self.filename, list(rup_indices), self.grp_id,
-                    self.trt, self.samples, self.rlzs_by_gsim, fe)
+                    self.trt, self.samples, self.rlzs_by_gsim)
                 rgetter.weight = block.weight
                 rgetter.sids_by_rup = sids_by_rup
-                fe += rgetter.num_events
                 lst.append(rgetter)
                 # print(rgetter)  # uncomment to debug
         return lst
@@ -601,6 +598,7 @@ class RuptureGetter(object):
         ebrs = []
         with datastore.read(self.filename) as dstore:
             rupgeoms = dstore['rupgeoms']
+            eslice = dstore['eslice']
             for i, rec in enumerate(self.rup_array):
                 if self.sids_by_rup is not None:
                     sids = self.sids_by_rup[i]
@@ -644,6 +642,7 @@ class RuptureGetter(object):
                                 rec['n_occ'], self.samples)
                 # not implemented: rupture_slip_direction
                 ebr.sids = sids
+                ebr.eslice = slice(*eslice[i])
                 ebrs.append(ebr)
         return ebrs
 
