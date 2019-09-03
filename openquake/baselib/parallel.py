@@ -828,14 +828,14 @@ def split_task(func, *args, duration=1000,
     n = len(elements)
     # print('task_no=%d, num_elements=%d' % (args[-1].task_no, n))
     assert n > 0, 'Passed an empty sequence!'
-    if n == 1:
+    if n <= 2:
         yield func(*args)
         return
-    first, *other = elements
-    first_weight = weight(first)
+    first, second, *other = elements
+    w = weight(first) + weight(second)
     t0 = time.time()
-    res = func(*([first],) + args[1:])
-    dt = (time.time() - t0) / first_weight  # time per unit of weight
+    res = func(*([first, second],) + args[1:])
+    dt = (time.time() - t0) / w  # time per unit of weight
     yield res
     blocks = list(block_splitter(other, duration, lambda el: weight(el) * dt))
     for block in blocks[:-1]:
