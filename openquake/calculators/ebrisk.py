@@ -58,7 +58,8 @@ def ebrisk(rupgetter, srcfilter, param, monitor):
                 computers.extend(gg.computers)
         computers.sort(key=lambda c: c.rupture.ridx)
         if not computers:  # all filtered out
-            return {}
+            yield {}
+            return
         with monitor('getting assets'):
             with datastore.read(srcfilter.filename) as dstore:
                 assetcol = dstore['assetcol']
@@ -71,7 +72,7 @@ def ebrisk(rupgetter, srcfilter, param, monitor):
         A = sum(len(assets) for assets in assets_by_site)
         AEL = (A, E, L)
         shape = assetcol.tagcol.agg_shape((E, L), param['aggregate_by'])
-        yield _calc(
+        yield from _calc(
             computers, events, gg.min_iml, gg.rlzs_by_gsim, gg.weights,
             assets_by_site, crmodel, shape, AEL, param,
             mon_haz, mon_risk, mon_agg)
@@ -84,16 +85,22 @@ def _calc(computers, events, min_iml, rlzs_by_gsim, weights,
                alt=numpy.zeros(AEL, F32) if param['asset_loss_table']
                else None, gmftimes=[], events_per_sid=0, gmf_nbytes=0)
     gmfs = []
-    gmftimes = []
     for c in computers:
         with mon_haz:
             gmfs.append(c.compute_all(min_iml, rlzs_by_gsim))
-        gmftimes.append(
+        acc['gmftimes'].append(
             (c.rupture.ridx, mon_haz.task_no, len(c.sids), mon_haz.dt))
-    acc['gmftimes'] = numpy.array(gmftimes, [('ridx', U32), ('task_no', U16),
-                                             ('nsites', U16), ('dt', F32)])
-    return _calc_risk(gmfs,  events, assets_by_site, crmodel,
-                      weights, shape, param, acc, mon_risk, mon_agg)
+        gmftime = sum(t[-1] for t in acc['gmftimes'])
+        if gmftime > param['task_duration']:
+            yield _calc_risk(gmfs,  events, assets_by_site, crmodel,
+                             weights, shape, param, acc, mon_risk, mon_agg)
+            acc = dict(arr=numpy.zeros(shape, F32),  # reset accumulator
+                       alt=numpy.zeros(AEL, F32) if param['asset_loss_table']
+                       else None, gmftimes=[], events_per_sid=0, gmf_nbytes=0)
+            gmfs.clear()
+    if acc['gmftimes']:
+        yield _calc_risk(gmfs,  events, assets_by_site, crmodel,
+                         weights, shape, param, acc, mon_risk, mon_agg)
 
 
 def _calc_risk(gmfs, events, assets_by_site, crmodel, weights, shape, param,
@@ -141,6 +148,9 @@ def _calc_risk(gmfs, events, assets_by_site, crmodel, weights, shape, param,
                             losses @ ws * param['ses_ratio'])
     if len(gmfs):
         acc['events_per_sid'] /= len(gmfs)
+    acc['gmftimes'] = numpy.array(
+        acc['gmftimes'], [('ridx', U32), ('task_no', U16),
+                          ('nsites', U16), ('dt', F32)])
     acc['elt'] = numpy.fromiter(  # this is ultra-fast
         ((event['id'], event['rlz_id'], losses)  # losses (L, T...)
          for event, losses in zip(events, acc['arr']) if losses.sum()),
