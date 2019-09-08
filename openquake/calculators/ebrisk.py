@@ -41,14 +41,40 @@ def start_ebrisk(rupgetter, srcfilter, param, monitor):
     """
     Launcher for ebrisk tasks
     """
-    rupgetters = rupgetter.split(srcfilter)
-    if rupgetters:
-        yield from parallel.split_task(
-            ebrisk, rupgetters, srcfilter, param, monitor,
-            duration=param['task_duration'])
+    mon_rup = monitor('filtering ruptures')
+    with mon_rup:
+        rupgetters = rupgetter.split(srcfilter)
+    if not rupgetters:
+        return {}
+    computers = []
+    with mon_rup:
+        for rupgetter in rupgetters:
+            gg = getters.GmfGetter(rupgetter, srcfilter, param['oqparam'])
+            gg.init()
+            computers.extend(gg.computers)
+    if not computers:  # all filtered out
+        return {}
+    computers.sort(key=lambda c: c.rupture.ridx)
+    param['hdf5cache'] = srcfilter.filename
+    dt = 0
+    haz = dict(gmfs=[], events=[], gmftimes=[])
+    mon_haz = monitor('getting hazard', measuremem=False)
+    for c in computers:
+        with mon_haz:
+            haz['gmfs'].append(c.compute_all(gg.min_iml, gg.rlzs_by_gsim))
+            haz['events'].append(c.rupture.get_events(gg.rlzs_by_gsim))
+        haz['gmftimes'].append(
+            (c.rupture.ridx, mon_haz.task_no, len(c.sids), mon_haz.dt))
+        dt += mon_haz.dt
+        if dt > param['task_duration'] / 2:
+            yield ebrisk, haz, param
+            dt = 0
+            haz = dict(gmfs=[], events=[], gmftimes=[])
+    if haz['gmfs']:
+        yield ebrisk(haz, param, monitor)
 
 
-def _calc_risk(hazard, param, monitor):
+def ebrisk(hazard, param, monitor):
     gmfs = numpy.concatenate(hazard['gmfs'])
     events = numpy.concatenate(hazard['events'])
     mon_risk = monitor('computing risk', measuremem=False)
@@ -122,36 +148,6 @@ def _calc_risk(hazard, param, monitor):
         del param['lba'].__dict__['losses_by_A']
     if param['asset_loss_table']:
         acc['alt'] = alt, events['id']
-    return acc
-
-
-def ebrisk(rupgetters, srcfilter, param, monitor):
-    """
-    :param rupgetters: RuptureGetters with 1 rupture each
-    :param srcfilter: a SourceFilter
-    :param param: dictionary of parameters coming from oqparam
-    :param monitor: a Monitor instance
-    :returns: a dictionary with keys elt, alt, ...
-    """
-    mon_haz = monitor('getting hazard', measuremem=False)
-    computers = []
-    with monitor('getting ruptures'):
-        for rupgetter in rupgetters:
-            gg = getters.GmfGetter(rupgetter, srcfilter, param['oqparam'])
-            gg.init()
-            computers.extend(gg.computers)
-    if not computers:  # all filtered out
-        return {}
-    computers.sort(key=lambda c: c.rupture.ridx)
-    param['hdf5cache'] = srcfilter.filename
-    acc = dict(gmfs=[], events=[], gmftimes=[])
-    for c in computers:
-        with mon_haz:
-            acc['gmfs'].append(c.compute_all(gg.min_iml, gg.rlzs_by_gsim))
-            acc['events'].append(c.rupture.get_events(gg.rlzs_by_gsim))
-        acc['gmftimes'].append(
-            (c.rupture.ridx, mon_haz.task_no, len(c.sids), mon_haz.dt))
-    acc = _calc_risk(acc, param, monitor)
     return acc
 
 
