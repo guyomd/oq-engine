@@ -772,11 +772,13 @@ class Starmap(object):
         isocket = iter(self.socket)
         self.todo = len(self.tasks)
         while self.todo:
+            t0 = time.time()
             res = next(isocket)
+            dt = time.time() - t0
+            print('Received %s in %.1f seconds' % (res.pik, dt))
             if self.calc_id != res.mon.calc_id:
                 logging.warning('Discarding a result from job %s, since this '
                                 'is job %d', res.mon.calc_id, self.calc_id)
-                continue
             elif res.msg == 'TASK_ENDED':
                 self.log_percent()
                 if self.queue:
