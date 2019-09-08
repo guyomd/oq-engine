@@ -56,21 +56,22 @@ def start_ebrisk(rupgetter, srcfilter, param, monitor):
         return {}
     computers.sort(key=lambda c: c.rupture.ridx)
     param['hdf5cache'] = srcfilter.filename
-    dt = 0
     haz = dict(gmfs=[], events=[], gmftimes=[])
     mon_haz = monitor('getting hazard', measuremem=False)
     for c in computers:
+        nbytes = 0
         with mon_haz:
-            haz['gmfs'].append(c.compute_all(gg.min_iml, gg.rlzs_by_gsim))
+            data = c.compute_all(gg.min_iml, gg.rlzs_by_gsim)
+            nbytes += data.nbytes
+            haz['gmfs'].append(data)
             haz['events'].append(c.rupture.get_events(gg.rlzs_by_gsim))
         haz['gmftimes'].append(
             (c.rupture.ridx, mon_haz.task_no, len(c.sids), mon_haz.dt))
-        dt += mon_haz.dt
-        if dt > param['task_duration'] / 2:
+        if nbytes > 1E8:
             haz['gmfs'] = numpy.concatenate(haz['gmfs'])
             haz['events'] = numpy.concatenate(haz['events'])
             yield ebrisk, haz, param
-            dt = 0
+            nbytes = 0
             haz = dict(gmfs=[], events=[], gmftimes=[])
     if haz['gmfs']:
         haz['gmfs'] = numpy.concatenate(haz['gmfs'])
