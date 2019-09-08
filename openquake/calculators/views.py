@@ -657,7 +657,7 @@ def view_task_ebrisk(token, dstore):
     task_info.sort(order='duration')
     info = task_info[idx]
     times = get_array(dstore['gmftimes'][()], task_no=info['taskno'])
-    extra = times[['nsites', 'ntaxos', 'dt']]
+    extra = times[['nsites', 'assets', 'dt']]
     ds = dstore.parent if dstore.parent else dstore
     rups = ds['ruptures']['rup_id', 'code', 'n_occ', 'mag'][times['ridx']]
     codeset = set('code_%d' % code for code in numpy.unique(rups['code']))
@@ -667,7 +667,7 @@ def view_task_ebrisk(token, dstore):
     return '%s\n%s\nTotal hazard time for task %d: %d s, n_occ=%d, w=%d' % (
         tbl, '\n'.join(codes), info['taskno'],
         extra['dt'].sum(), rups['n_occ'].sum(),
-        (rups['n_occ'] * extra['ntaxos']).sum())
+        (rups['n_occ'] * extra['assets']).sum())
 
 
 @view.add('hmap')
