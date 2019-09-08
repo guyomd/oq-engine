@@ -781,10 +781,10 @@ class Starmap(object):
                 self.log_percent()
                 if self.queue:
                     self.submit(*self.queue.pop())
-                    logging.debug('Tasks in queue: %d', len(self.queue))
+                    print('Tasks in queue: %d' % len(self.queue))
                 else:
                     self.todo -= 1
-                    logging.debug('Tasks to do:', self.todo)
+                    print('Tasks to do: %d' % self.todo)
             elif res.msg:
                 logging.warning(res.msg)
             elif res.func_args:  # resubmit subtask
