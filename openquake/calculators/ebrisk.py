@@ -69,30 +69,21 @@ def ebrisk(rupgetter, srcfilter, param, monitor):
         E = len(events)
         L = len(param['lba'].loss_names)
         A = sum(len(assets) for assets in assets_by_site)
+        AEL = (A, E, L)
         shape = assetcol.tagcol.agg_shape((E, L), param['aggregate_by'])
-        elt_dt = [('event_id', U32), ('rlzi', U16), ('loss', (F32, shape[1:]))]
-        acc = dict(arr=numpy.zeros(shape, F32),  # shape (E, L, T...)
-                   alt=numpy.zeros((A, E, L), F32) if param['asset_loss_table']
-                   else None, gmftimes=[], events_per_sid=0, gmf_nbytes=0)
-        # NB: IMT-dependent weights are not supported in ebrisk
-        _calc(
+        yield _calc(
             computers, events, gg.min_iml, gg.rlzs_by_gsim, gg.weights,
-            assets_by_site, crmodel, param, acc, mon_haz, mon_risk, mon_agg)
-        acc['elt'] = numpy.fromiter(  # this is ultra-fast
-            ((event['id'], event['rlz_id'], losses)  # losses (L, T...)
-             for event, losses in zip(events, acc['arr']) if losses.sum()),
-            elt_dt)
-        if param['avg_losses']:
-            acc['losses_by_A'] = param['lba'].losses_by_A
-            # without resetting the cache the avg_losses would be wrong!
-            del param['lba'].__dict__['losses_by_A']
-        if param['asset_loss_table']:
-            acc['alt'] = acc['alt'], events['id']
-        yield acc
+            assets_by_site, crmodel, shape, AEL, param,
+            mon_haz, mon_risk, mon_agg)
 
 
 def _calc(computers, events, min_iml, rlzs_by_gsim, weights,
-          assets_by_site, crmodel, param, acc, mon_haz, mon_risk, mon_agg):
+          assets_by_site, crmodel, shape, AEL, param,
+          mon_haz, mon_risk, mon_agg):
+    elt_dt = [('event_id', U32), ('rlzi', U16), ('loss', (F32, shape[1:]))]
+    acc = dict(arr=numpy.zeros(shape, F32),  # shape (E, L, T...)
+               alt=numpy.zeros(AEL, F32) if param['asset_loss_table']
+               else None, gmftimes=[], events_per_sid=0, gmf_nbytes=0)
     arr = acc['arr']
     alt = acc['alt']
     lba = param['lba']
@@ -145,6 +136,17 @@ def _calc(computers, events, min_iml, rlzs_by_gsim, weights,
                             losses @ ws * param['ses_ratio'])
     if len(gmfs):
         acc['events_per_sid'] /= len(gmfs)
+    acc['elt'] = numpy.fromiter(  # this is ultra-fast
+        ((event['id'], event['rlz_id'], losses)  # losses (L, T...)
+         for event, losses in zip(events, acc['arr']) if losses.sum()),
+        elt_dt)
+    if param['avg_losses']:
+        acc['losses_by_A'] = param['lba'].losses_by_A
+        # without resetting the cache the avg_losses would be wrong!
+        del param['lba'].__dict__['losses_by_A']
+    if param['asset_loss_table']:
+        acc['alt'] = acc['alt'], events['id']
+    return acc
 
 
 @base.calculators.add('ebrisk')
