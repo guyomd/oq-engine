@@ -80,17 +80,9 @@ def ebrisk(rupgetter, srcfilter, param, monitor):
 def _calc(computers, events, min_iml, rlzs_by_gsim, weights,
           assets_by_site, crmodel, shape, AEL, param,
           mon_haz, mon_risk, mon_agg):
-    elt_dt = [('event_id', U32), ('rlzi', U16), ('loss', (F32, shape[1:]))]
     acc = dict(arr=numpy.zeros(shape, F32),  # shape (E, L, T...)
                alt=numpy.zeros(AEL, F32) if param['asset_loss_table']
                else None, gmftimes=[], events_per_sid=0, gmf_nbytes=0)
-    arr = acc['arr']
-    alt = acc['alt']
-    lba = param['lba']
-    epspath = param['epspath']
-    tagnames = param['aggregate_by']
-    eid2rlz = dict(events[['id', 'rlz_id']])
-    eid2idx = {eid: idx for idx, eid in enumerate(eid2rlz)}
     gmfs = []
     gmftimes = []
     for c in computers:
@@ -98,10 +90,23 @@ def _calc(computers, events, min_iml, rlzs_by_gsim, weights,
             gmfs.append(c.compute_all(min_iml, rlzs_by_gsim))
         gmftimes.append(
             (c.rupture.ridx, mon_haz.task_no, len(c.sids), mon_haz.dt))
-    gmfs = numpy.concatenate(gmfs)
     acc['gmftimes'] = numpy.array(gmftimes, [('ridx', U32), ('task_no', U16),
                                              ('nsites', U16), ('dt', F32)])
+    return _calc_risk(gmfs,  events, assets_by_site, crmodel,
+                      weights, shape, param, acc, mon_risk, mon_agg)
 
+
+def _calc_risk(gmfs, events, assets_by_site, crmodel, weights, shape, param,
+               acc, mon_risk, mon_agg):
+    arr = acc['arr']
+    alt = acc['alt']
+    lba = param['lba']
+    epspath = param['epspath']
+    tagnames = param['aggregate_by']
+    elt_dt = [('event_id', U32), ('rlzi', U16), ('loss', (F32, shape[1:]))]
+    eid2rlz = dict(events[['id', 'rlz_id']])
+    eid2idx = {eid: idx for idx, eid in enumerate(eid2rlz)}
+    gmfs = numpy.concatenate(gmfs)
     for sid, haz in general.group_array(gmfs, 'sid').items():
         acc['gmf_nbytes'] += haz.nbytes
         assets_on_sid = assets_by_site[sid]
