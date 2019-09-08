@@ -67,16 +67,20 @@ def start_ebrisk(rupgetter, srcfilter, param, monitor):
             (c.rupture.ridx, mon_haz.task_no, len(c.sids), mon_haz.dt))
         dt += mon_haz.dt
         if dt > param['task_duration'] / 2:
+            haz['gmfs'] = numpy.concatenate(haz['gmfs'])
+            haz['events'] = numpy.concatenate(haz['events'])
             yield ebrisk, haz, param
             dt = 0
             haz = dict(gmfs=[], events=[], gmftimes=[])
     if haz['gmfs']:
+        haz['gmfs'] = numpy.concatenate(haz['gmfs'])
+        haz['events'] = numpy.concatenate(haz['events'])
         yield ebrisk(haz, param, monitor)
 
 
 def ebrisk(hazard, param, monitor):
-    gmfs = numpy.concatenate(hazard['gmfs'])
-    events = numpy.concatenate(hazard['events'])
+    gmfs = hazard['gmfs']
+    events = hazard['events']
     mon_risk = monitor('computing risk', measuremem=False)
     mon_agg = monitor('aggregating losses', measuremem=False)
     with datastore.read(param['hdf5cache']) as cache:
