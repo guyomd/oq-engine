@@ -791,9 +791,11 @@ class Starmap(object):
                 func, *args = res.func_args
                 self.submit(*args, func=func, monitor=res.mon)
                 self.todo += 1
-                dt = time.time() - t0
-                print('Resubmitted %s in %.1f seconds' % (res.pik, dt))
+                print('Resubmitted %s in %.1f seconds' %
+                      (res.pik, time.time() - t0))
             else:
+                print('Received %s in %.1f seconds' %
+                      (res.pik, time.time() - t0))
                 yield res
         self.log_percent()
         self.socket.__exit__(None, None, None)
