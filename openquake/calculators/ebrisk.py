@@ -216,8 +216,8 @@ class EbriskCalculator(event_based.EventBasedCalculator):
                 self.datastore.hdf5.copy('rupgeoms', cache)
         num_cores = oq.__class__.concurrent_tasks.default // 2 or 1
         per_block = numpy.ceil(n_occ.sum() / (oq.concurrent_tasks or 1))
-        #if per_block > 2000:  # limit the number of occurrences per block
-        #    per_block = 2000
+        if per_block > 2000:  # limit the number of occurrences per block
+            per_block = 2000
         logging.info('Using %d occurrences per block (over %d occurrences, '
                      '%d events)', per_block, n_occ.sum(), self.E)
         self.set_param(
