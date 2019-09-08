@@ -774,9 +774,6 @@ class Starmap(object):
         while self.todo:
             t0 = time.time()
             res = next(isocket)
-            dt = time.time() - t0
-            if res.pik.clsname != 'NoneType':
-                print('Received %s in %.1f seconds' % (res.pik, dt))
             if self.calc_id != res.mon.calc_id:
                 logging.warning('Discarding a result from job %s, since this '
                                 'is job %d', res.mon.calc_id, self.calc_id)
@@ -794,6 +791,8 @@ class Starmap(object):
                 func, *args = res.func_args
                 self.submit(*args, func=func, monitor=res.mon)
                 self.todo += 1
+                dt = time.time() - t0
+                print('Resubmitted %s in %.1f seconds' % (res.pik, dt))
             else:
                 yield res
         self.log_percent()
