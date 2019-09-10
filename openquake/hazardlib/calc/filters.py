@@ -23,11 +23,13 @@ import collections.abc
 from contextlib import contextmanager
 import numpy
 from scipy.interpolate import interp1d
+from scipy.spatial.distance import cdist
 
 from openquake.baselib import hdf5
 from openquake.baselib.python3compat import raise_
 from openquake.hazardlib.geo.utils import (
-    KM_TO_DEGREES, angular_distance, fix_lon, get_bounding_box)
+    KM_TO_DEGREES, angular_distance, fix_lon, get_bounding_box,
+    spherical_to_cartesian)
 
 MAX_DISTANCE = 2000  # km, ultra big distance used if there is no filter
 src_group_id = operator.attrgetter('src_group_id')
@@ -367,6 +369,21 @@ class SourceFilter(object):
         a2 = min(angular_distance(maxdist, bbox[1], bbox[3]), 180)
         bb = bbox[0] - a2, bbox[1] - a1, bbox[2] + a2, bbox[3] + a1
         return self.sitecol.within_bbox(bb)
+
+    def close_sids2(self, rec, trt):
+        """
+        :param rec:
+           a record with fields mag, hypo
+        :param trt:
+           tectonic region type string
+        :returns:
+           the site indices within half of the maximum_distance
+        """
+        lon, lat, dep = rec['hypo']
+        maxdist = self.integration_distance(trt, rec['mag'])
+        xyz = spherical_to_cartesian(lon, lat, dep).reshape(1, 3)
+        sids, _ = numpy.where(cdist(self.sitecol.xyz, xyz) < maxdist / 2)
+        return sids
 
     def filter(self, sources):
         """
