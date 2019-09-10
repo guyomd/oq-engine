@@ -497,6 +497,8 @@ class RuptureGetter(object):
         """
         out = []
         array = self.rup_array
+        with hdf5.File(srcfilter.filename, 'r') as h5:
+            num_assets = h5['num_assets'][()]
         for i, ridx in enumerate(self.rup_indices):
             rg = object.__new__(self.__class__)
             rg.filename = self.filename
@@ -506,7 +508,8 @@ class RuptureGetter(object):
             rg.samples = self.samples
             rg.rlzs_by_gsim = self.rlzs_by_gsim
             rg.e0 = numpy.array([self.e0[i]])
-            rg.weight = array[i]['n_occ']
+            sids = srcfilter.close_sids2(array[i], self.trt)
+            rg.weight = (num_assets[sids].sum() + 1) * array[i]['n_occ']
             out.append(rg)
         return out
 
