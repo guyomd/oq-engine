@@ -41,9 +41,11 @@ def start_ebrisk(rupgetter, srcfilter, param, monitor):
     """
     Launcher for ebrisk tasks
     """
-    rupgetters = rupgetter.split(srcfilter)
+    with monitor('splitting rupgetters'):
+        rupgetters = rupgetter.split(srcfilter)
     yield from parallel.split_task(
         ebrisk, rupgetters, srcfilter, param, monitor,
+        weight=lambda rg: rg.num_occ,
         duration=param['task_duration'])
 
 
@@ -110,7 +112,7 @@ def _calc_risk(hazard, param, monitor):
         acc['events_per_sid'] /= len(gmfs)
     acc['gmf_info'] = numpy.array(
         hazard['gmf_info'], [('ridx', U32), ('task_no', U16),
-                             ('nsites', U16), ('rupweight', U16),
+                             ('num_sites', U16), ('num_assets', U16),
                              ('gmfbytes', F32), ('dt', F32)])
     acc['elt'] = numpy.fromiter(  # this is ultra-fast
         ((event['id'], event['rlz_id'], losses)  # losses (L, T...)
@@ -138,12 +140,10 @@ def ebrisk(rupgetters, srcfilter, param, monitor):
         for rupgetter in rupgetters:
             gg = getters.GmfGetter(rupgetter, srcfilter, param['oqparam'])
             gg.init()
-            try:
+            if gg.computers:
                 [comp] = gg.computers
-            except ValueError:
-                continue
-            comp.weight = rupgetter.weight
-            computers.append(comp)
+                comp.num_assets = rupgetter.num_assets
+                computers.append(comp)
     if not computers:  # all filtered out
         return {}
     rupgetters.clear()
@@ -156,7 +156,7 @@ def ebrisk(rupgetters, srcfilter, param, monitor):
             hazard['gmfs'].append(data)
             hazard['events'].append(c.rupture.get_events(gg.rlzs_by_gsim))
         hazard['gmf_info'].append(
-            (c.rupture.ridx, mon_haz.task_no, len(c.sids), c.weight,
+            (c.rupture.ridx, mon_haz.task_no, len(c.sids), c.num_assets,
              data.nbytes, mon_haz.dt))
     computers.clear()
     acc = _calc_risk(hazard, param, monitor)
