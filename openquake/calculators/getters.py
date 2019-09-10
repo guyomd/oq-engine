@@ -506,8 +506,8 @@ class RuptureGetter(object):
             rg.samples = self.samples
             rg.rlzs_by_gsim = self.rlzs_by_gsim
             rg.e0 = numpy.array([self.e0[i]])
-            n_occ = array[i]['n_occ']
-            rg.weight = * n_occ
+            rg.weight = array[i]['n_occ']
+            out.append(rg)
         return out
 
     @general.cached_property
