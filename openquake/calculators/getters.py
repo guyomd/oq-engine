@@ -507,10 +507,7 @@ class RuptureGetter(object):
             rg.rlzs_by_gsim = self.rlzs_by_gsim
             rg.e0 = numpy.array([self.e0[i]])
             n_occ = array[i]['n_occ']
-            sids = srcfilter.close_sids(array[i], self.trt)
-            rg.weight = len(sids) * n_occ
-            if rg.weight:
-                out.append(rg)
+            rg.weight = * n_occ
         return out
 
     @general.cached_property
