@@ -667,7 +667,8 @@ def view_task_ebrisk(token, dstore):
     msg = '%s\n%s\nHazard time for task %d: %d of %d s, ' % (
         tbl, '\n'.join(codes), info['taskno'], extra['dt'].sum(),
         info['duration'])
-    msg += 'gmfbytes=%s' % humansize(extra['gmfbytes'].sum())
+    msg += 'gmfbytes=%s, weight=%s' % (humansize(extra['gmfbytes'].sum(),
+                                                 extra['rupweight'].sum()))
     return msg
 
 
